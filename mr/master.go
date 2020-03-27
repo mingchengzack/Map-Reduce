@@ -221,9 +221,9 @@ func (m *Master) initMapTasks(files []string, nReduce int) {
 	c := 0
 	for _, file := range files {
 		task := Task{Map, file, c, nReduce}
-		c++
 		m.taskState[task] = TaskSt{Idle, ""}
 		m.taskCh <- task
+		c++
 	}
 }
 
@@ -232,7 +232,9 @@ func (m *Master) initReduceTasks() {
 	for r, file := range m.intermediate {
 		m.reduceAvail++
 		m.reduceRem++
-		m.taskCh <- Task{Reduce, file, 0, r}
+		task := Task{Reduce, file, 0, r}
+		m.taskState[task] = TaskSt{Idle, ""}
+		m.taskCh <- task
 	}
 }
 
