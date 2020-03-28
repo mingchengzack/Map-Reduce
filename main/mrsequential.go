@@ -17,7 +17,7 @@ import (
 	"../mr"
 )
 
-// for sorting by key.
+// ByKey defines the type for sorting by key.
 type ByKey []mr.KeyValue
 
 // for sorting by key.
@@ -64,28 +64,23 @@ func main() {
 	oname := "mr-out-0"
 	ofile, _ := os.Create(oname)
 
-	//
 	// call Reduce on each distinct key in intermediate[],
 	// and print the result to mr-out-0.
-	//
 	i := 0
 	for i < len(intermediate) {
-		j := i + 1
-		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
-			j++
-		}
+		// Find out all the values with the same key
 		values := []string{}
-		for k := i; k < j; k++ {
-			values = append(values, intermediate[k].Value)
+		j := i
+		for ; j < len(intermediate) && intermediate[j].Key == intermediate[i].Key; j++ {
+			values = append(values, intermediate[j].Value)
 		}
 		output := reducef(intermediate[i].Key, values)
 
-		// this is the correct format for each line of Reduce output.
+		// Write to tmp output file with kv
 		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
 
 		i = j
 	}
-
 	ofile.Close()
 }
 
