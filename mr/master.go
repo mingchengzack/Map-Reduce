@@ -76,13 +76,11 @@ type Task struct {
 type Master struct {
 	mu           sync.Mutex
 	taskCh       chan Task
-	intermediate map[int]string
 	taskState    map[Task]TaskSt
+	taskAvail    int
+	taskRem      int
+	intermediate map[int]string
 	phase        Phase
-	mapAvail     int
-	mapRem       int
-	reduceAvail  int
-	reduceRem    int
 }
 
 // timeout checks if the given task is completed in the timeout interval (10s)
@@ -101,12 +99,7 @@ func (m *Master) timeout(task Task) {
 	}
 
 	// Not completed, reschedule it
-	if m.phase == MapPhase {
-		m.mapAvail++
-	} else {
-		m.reduceAvail++
-	}
-
+	m.taskAvail++
 	m.taskCh <- task
 	m.taskState[task] = TaskSt{Idle, ""}
 	return
@@ -125,7 +118,7 @@ func (m *Master) AssignTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	}
 
 	// No available jobs to be assigned
-	if m.phase == MapPhase && m.mapAvail == 0 || m.phase == ReducePhase && m.reduceAvail == 0 {
+	if m.taskAvail == 0 {
 		reply.T = Task{Retry, "", 0, 0}
 		return nil
 	}
@@ -134,12 +127,7 @@ func (m *Master) AssignTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	task := <-m.taskCh                          // Get tasks from channel
 	m.taskState[task] = TaskSt{Working, args.W} // Assign worker to this task
 	reply.T = task                              // Send task back to worker
-
-	if m.phase == MapPhase {
-		m.mapAvail--
-	} else {
-		m.reduceAvail--
-	}
+	m.taskAvail--
 
 	// Set timeout func
 	go m.timeout(task)
@@ -156,6 +144,11 @@ func (m *Master) CompleteTask(args *CompleteTaskArgs, reply *CompleteTaskReply) 
 	// Check if the task is assignd to this worker
 	// (calling worker might be assumed dead)
 	if m.taskState[args.T].wid != args.W {
+		// Remove intermediate files late worker created
+		for _, file := range args.F {
+			os.Remove(file)
+		}
+
 		reply.Message = "You are dead by master! Try to get another task!\n"
 		return errors.New("[ERROR] Dead assignment")
 	}
@@ -178,9 +171,8 @@ func (m *Master) CompleteTask(args *CompleteTaskArgs, reply *CompleteTaskReply) 
 	}
 
 	// Potential phase transition
+	m.taskRem--
 	if m.phase == MapPhase {
-		m.mapRem--
-
 		// Add to intermediate files
 		for _, r := range rs {
 			oname := "mr-" + strconv.Itoa(args.T.M) + "-" + strconv.Itoa(r)
@@ -192,15 +184,13 @@ func (m *Master) CompleteTask(args *CompleteTaskArgs, reply *CompleteTaskReply) 
 		}
 
 		// Map phase done
-		if m.mapRem == 0 {
+		if m.taskRem == 0 {
 			m.initReduceTasks()
 			m.phase = ReducePhase
 		}
 	} else {
-		m.reduceRem--
-
 		// Tasks all done
-		if m.reduceRem == 0 {
+		if m.taskRem == 0 {
 			m.phase = DonePhase
 		}
 	}
@@ -210,10 +200,17 @@ func (m *Master) CompleteTask(args *CompleteTaskArgs, reply *CompleteTaskReply) 
 
 // initMapTasks initializes the map tasks that are needed to be done
 func (m *Master) initMapTasks(files []string, nReduce int) {
-	m.mapAvail = len(files)
-	m.mapRem = m.mapAvail
+	m.taskAvail = len(files)
+	m.taskRem = m.taskAvail
 	m.intermediate = make(map[int]string)
-	m.taskCh = make(chan Task, m.mapAvail+nReduce)
+
+	var nTasks int
+	if m.taskAvail < nReduce {
+		nTasks = nReduce
+	} else {
+		nTasks = m.taskAvail
+	}
+	m.taskCh = make(chan Task, nTasks)
 	m.taskState = make(map[Task]TaskSt)
 	m.phase = MapPhase
 
@@ -230,8 +227,8 @@ func (m *Master) initMapTasks(files []string, nReduce int) {
 // initReduceTasks initializes the map tasks that are need to be done
 func (m *Master) initReduceTasks() {
 	for r, file := range m.intermediate {
-		m.reduceAvail++
-		m.reduceRem++
+		m.taskAvail++
+		m.taskRem++
 		task := Task{Reduce, file, 0, r}
 		m.taskState[task] = TaskSt{Idle, ""}
 		m.taskCh <- task
