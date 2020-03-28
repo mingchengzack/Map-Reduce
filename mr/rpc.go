@@ -15,25 +15,25 @@ import (
 
 // GetTaskArgs defines the args to send when a worker ask for a task
 type GetTaskArgs struct {
-	W WID
+	W WID // Worker ID
 }
 
 // GetTaskReply defines the reply the worker gets after asking for a task
 type GetTaskReply struct {
-	T Task
+	T Task // Task assigned for the worker
 }
 
 // CompleteTaskArgs defines the args to send when the worker completes a task
 type CompleteTaskArgs struct {
-	W WID
-	T Task
-	F []string
-	R []int
+	W WID      // Worker ID
+	T Task     // Task completed by this worker
+	F []string // Created files names
+	R []int    // Reduce tasks ID
 }
 
 // CompleteTaskReply defines the reply the worker gets after completing a task
 type CompleteTaskReply struct {
-	Message string
+	Message string // Debug message
 }
 
 // Cook up a unique-ish UNIX-domain socket name

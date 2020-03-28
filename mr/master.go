@@ -57,27 +57,27 @@ const (
 
 // TaskSt defines the structure for a task (state and assign worker)
 type TaskSt struct {
-	st  State
-	wid WID
+	st  State // Task state (idle, working, completed)
+	wid WID   // Worker assigned for the task
 }
 
 // Task defines the structure for a task worker can do
 type Task struct {
-	Ty   TaskTy
-	File string
-	M    int
-	R    int
+	Ty   TaskTy // Type of the taks
+	File string // File path to perform tasks
+	M    int    // id for map task
+	R    int    // id for reduce task/nReduce for map task
 }
 
 // Master defines the structure for the master of mapreduce framework
 type Master struct {
-	mu           sync.Mutex
-	cond         *sync.Cond
-	tasks        []Task
-	taskState    map[Task]TaskSt
-	taskRem      int
-	intermediate map[int]string
-	phase        Phase
+	mu           sync.Mutex      // Lock to protect the shared data (tasks)
+	cond         *sync.Cond      // Cond var for managing available tasks
+	tasks        []Task          // Tasks queue to assign
+	taskState    map[Task]TaskSt // Table of the task states
+	taskRem      int             // Remaining tasks to complete
+	intermediate map[int]string  // Intermediate files from map tasks
+	phase        Phase           // Current phase of map reduce
 }
 
 // timeout checks if the given task is completed in the timeout interval (10s)
