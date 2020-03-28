@@ -37,9 +37,6 @@ const (
 	// Reduce task
 	Reduce
 
-	// Retry task
-	Retry
-
 	// Exit task
 	Exit
 )
@@ -75,6 +72,7 @@ type Task struct {
 // Master defines the structure for the master of mapreduce framework
 type Master struct {
 	mu           sync.Mutex
+	cond         *sync.Cond
 	taskCh       chan Task
 	taskState    map[Task]TaskSt
 	taskAvail    int
@@ -102,6 +100,7 @@ func (m *Master) timeout(task Task) {
 	m.taskAvail++
 	m.taskCh <- task
 	m.taskState[task] = TaskSt{Idle, ""}
+	m.cond.Broadcast()
 	return
 }
 
@@ -111,15 +110,14 @@ func (m *Master) AssignTask(args *GetTaskArgs, reply *GetTaskReply) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// While no available jobs or not done yet
+	for m.taskAvail == 0 && m.phase != DonePhase {
+		m.cond.Wait()
+	}
+
 	// Job is done
 	if m.phase == DonePhase {
 		reply.T = Task{Exit, "", 0, 0}
-		return nil
-	}
-
-	// No available jobs to be assigned
-	if m.taskAvail == 0 {
-		reply.T = Task{Retry, "", 0, 0}
 		return nil
 	}
 
@@ -195,11 +193,14 @@ func (m *Master) CompleteTask(args *CompleteTaskArgs, reply *CompleteTaskReply) 
 		}
 	}
 
+	m.cond.Broadcast()
+
 	return nil
 }
 
 // initMapTasks initializes the map tasks that are needed to be done
 func (m *Master) initMapTasks(files []string, nReduce int) {
+	m.cond = sync.NewCond(&m.mu)
 	m.taskAvail = len(files)
 	m.taskRem = m.taskAvail
 	m.intermediate = make(map[int]string)
@@ -256,7 +257,11 @@ func (m *Master) Done() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	ret := false
 	if m.phase == DonePhase {
+		ret = true
+		close(m.taskCh)
+
 		// Remove intermediate files
 		for _, fn := range m.intermediate {
 			ff := func(r rune) bool { return r == ' ' }
@@ -268,7 +273,7 @@ func (m *Master) Done() bool {
 		}
 	}
 
-	return m.phase == DonePhase
+	return ret
 }
 
 // MakeMaster create a Master

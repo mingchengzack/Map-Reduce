@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // KeyValue defines {key, value} pair
@@ -51,12 +50,8 @@ func Worker(mapf func(string, string) []KeyValue,
 
 	// Get task from master
 	for task := getTask(wid); task != nil && task.Ty != Exit; task = getTask(wid) {
-		if task.Ty == Retry {
-			time.Sleep(time.Second) // Wait one second before retrying
-		} else {
-			fs, rs := doTask(task, mapf, reducef)
-			completeTask(wid, task, fs, rs)
-		}
+		fs, rs := doTask(task, mapf, reducef)
+		completeTask(wid, task, fs, rs)
 	}
 
 	// Worker finishes job and exit
